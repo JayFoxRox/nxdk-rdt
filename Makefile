@@ -8,10 +8,10 @@ SHADER_OBJS = ps.inl vs.inl
 
 SRCS += $(CURDIR)/lib/protobuf-c/protobuf-c.c
 
-CFLAGS_EXTRA += -I$(CURDIR)
-CFLAGS_EXTRA += -I$(CURDIR)/lib
-
 include $(NXDK_DIR)/Makefile
+
+CFLAGS += -I$(CURDIR)
+CFLAGS += -I$(CURDIR)/lib
 
 .PHONY:clean_local
 clean_local:

@@ -22,6 +22,7 @@
 
 #include "dbg.pb-c.h"
 #include "net.h"
+#include "scsi.h"
 #include "dbgd.h"
 
 #define DBGD_PORT 80
@@ -250,3 +251,27 @@ static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res)
 
     return DBG__RESPONSE__TYPE__OK;
 }
+
+static int dbgd_scsi_dvd_in(Dbg__Request *req, Dbg__Response *res)
+{
+    if (!req->has_command || !req->has_size)
+        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+
+    res->buffer.len  = req->size; 
+    res->buffer.data = malloc(res->buffer.len);
+    res->has_buffer = 1;
+    NTSTATUS status = scsi_dvd_command(SCSI_IOCTL_DATA_IN, req->command.data, req->command.len, res->buffer.data, res->buffer.len);
+
+    return DBG__RESPONSE__TYPE__OK;
+}
+
+static int dbgd_scsi_dvd_out(Dbg__Request *req, Dbg__Response *res)
+{
+    if (!req->has_command || !req->has_buffer)
+        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+
+    NTSTATUS status = scsi_dvd_command(SCSI_IOCTL_DATA_OUT, req->command.data, req->command.len, req->buffer.data, req->buffer.len);
+
+    return DBG__RESPONSE__TYPE__OK;
+}
+

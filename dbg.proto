@@ -16,8 +16,10 @@ message Request {
 		DEBUG_PRINT       = 6;
 		SHOW_DEBUG_SCREEN = 7;
 		SHOW_FRONT_SCREEN = 8;
+    SCSI_DVD_IN       = 9;
+    SCSI_DVD_OUT      = 10;
 
-		COUNT = 9;
+		COUNT = 11;
 	}
 
 	required Type   type    = 1; //
@@ -25,6 +27,8 @@ message Request {
 	optional int32  address = 3; // FREE, MEM_READ, MEM_WRITE
 	optional int32  size    = 4; // MALLOC, MEM_READ, MEM_WRITE
 	optional int64  value   = 5; // MEM_WRITE
+  optional bytes  command = 6;
+  optional bytes  buffer  = 7;
 }
 
 message Response {
@@ -40,4 +44,5 @@ message Response {
 	optional int32   address = 4; // MALLOC
 	optional int32   size    = 5; // 
 	optional int64   value   = 6; // MEM_READ
+  optional bytes   buffer  = 7;
 }
