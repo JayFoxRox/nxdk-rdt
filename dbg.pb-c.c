@@ -269,12 +269,12 @@ static const ProtobufCFieldDescriptor dbg__request__field_descriptors[5] =
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
   {
-    "value",
+    "buffer",
     5,
     PROTOBUF_C_LABEL_OPTIONAL,
-    PROTOBUF_C_TYPE_INT64,
-    offsetof(Dbg__Request, has_value),
-    offsetof(Dbg__Request, value),
+    PROTOBUF_C_TYPE_BYTES,
+    offsetof(Dbg__Request, has_buffer),
+    offsetof(Dbg__Request, buffer),
     NULL,
     NULL,
     0,             /* flags */
@@ -283,10 +283,10 @@ static const ProtobufCFieldDescriptor dbg__request__field_descriptors[5] =
 };
 static const unsigned dbg__request__field_indices_by_name[] = {
   2,   /* field[2] = address */
+  4,   /* field[4] = buffer */
   1,   /* field[1] = msg */
   3,   /* field[3] = size */
   0,   /* field[0] = type */
-  4,   /* field[4] = value */
 };
 static const ProtobufCIntRange dbg__request__number_ranges[1 + 1] =
 {

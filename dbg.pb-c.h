@@ -73,19 +73,16 @@ struct  _Dbg__Request
   protobuf_c_boolean has_address;
   int32_t address;
   /*
-   * MALLOC, MEM_READ, MEM_WRITE
+   * MALLOC, MEM_READ
    */
   protobuf_c_boolean has_size;
   int32_t size;
-  /*
-   * MEM_WRITE
-   */
-  protobuf_c_boolean has_value;
-  int64_t value;
+  protobuf_c_boolean has_buffer;
+  ProtobufCBinaryData buffer;
 };
 #define DBG__REQUEST__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&dbg__request__descriptor) \
-    , 0, NULL, 0,0, 0,0, 0,0 }
+    , 0, NULL, 0,0, 0,0, 0,{0,NULL} }
 
 
 struct  _Dbg__Response
