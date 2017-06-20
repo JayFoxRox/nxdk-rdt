@@ -1,4 +1,7 @@
 #include <xboxkrnl/xboxkrnl.h>
+#include <xboxrt/debug.h>
+#include <string.h>
+#include <assert.h>
 
 #include "scsi.h"
 
