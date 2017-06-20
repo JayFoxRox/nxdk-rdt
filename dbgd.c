@@ -31,28 +31,8 @@
 #define HTTPD_DEBUG LWIP_DBG_OFF
 #endif
 
-static int dbgd_sysinfo(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_reboot(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_malloc(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_free(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_mem_read(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_debug_print(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_show_debug_screen(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res);
-
 typedef int (*dbgd_req_handler)(Dbg__Request *req, Dbg__Response *res);
-static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
-    &dbgd_sysinfo,
-    &dbgd_reboot,
-    &dbgd_malloc,
-    &dbgd_free,
-    &dbgd_mem_read,
-    &dbgd_mem_write,
-    &dbgd_debug_print,
-    &dbgd_show_debug_screen,
-    &dbgd_show_front_screen,
-};
+extern dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT];
 
 static void dbgd_serve(struct netconn *conn)
 {
@@ -259,6 +239,7 @@ static int dbgd_scsi_dvd_in(Dbg__Request *req, Dbg__Response *res)
 
     res->buffer.len  = req->size; 
     res->buffer.data = malloc(res->buffer.len);
+    memset(res->buffer.data, 0xFF, res->buffer.len);
     res->has_buffer = 1;
     NTSTATUS status = scsi_dvd_command(SCSI_IOCTL_DATA_IN, req->command.data, req->command.len, res->buffer.data, res->buffer.len);
 
@@ -274,4 +255,20 @@ static int dbgd_scsi_dvd_out(Dbg__Request *req, Dbg__Response *res)
 
     return DBG__RESPONSE__TYPE__OK;
 }
+
+
+static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
+    &dbgd_sysinfo,
+    &dbgd_reboot,
+    &dbgd_malloc,
+    &dbgd_free,
+    &dbgd_mem_read,
+    &dbgd_mem_write,
+    &dbgd_debug_print,
+    &dbgd_show_debug_screen,
+    &dbgd_show_front_screen,
+    &dbgd_scsi_dvd_in,
+    &dbgd_scsi_dvd_out
+};
+
 
