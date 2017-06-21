@@ -174,7 +174,7 @@ const ProtobufCMessageDescriptor dbg__sys_info__descriptor =
   (ProtobufCMessageInit) dbg__sys_info__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCEnumValue dbg__request__type__enum_values_by_number[10] =
+static const ProtobufCEnumValue dbg__request__type__enum_values_by_number[12] =
 {
   { "SYSINFO", "DBG__REQUEST__TYPE__SYSINFO", 0 },
   { "REBOOT", "DBG__REQUEST__TYPE__REBOOT", 1 },
@@ -185,20 +185,24 @@ static const ProtobufCEnumValue dbg__request__type__enum_values_by_number[10] =
   { "DEBUG_PRINT", "DBG__REQUEST__TYPE__DEBUG_PRINT", 6 },
   { "SHOW_DEBUG_SCREEN", "DBG__REQUEST__TYPE__SHOW_DEBUG_SCREEN", 7 },
   { "SHOW_FRONT_SCREEN", "DBG__REQUEST__TYPE__SHOW_FRONT_SCREEN", 8 },
-  { "COUNT", "DBG__REQUEST__TYPE__COUNT", 9 },
+  { "SCSI_DVD_IN", "DBG__REQUEST__TYPE__SCSI_DVD_IN", 9 },
+  { "SCSI_DVD_OUT", "DBG__REQUEST__TYPE__SCSI_DVD_OUT", 10 },
+  { "COUNT", "DBG__REQUEST__TYPE__COUNT", 11 },
 };
 static const ProtobufCIntRange dbg__request__type__value_ranges[] = {
-{0, 0},{0, 10}
+{0, 0},{0, 12}
 };
-static const ProtobufCEnumValueIndex dbg__request__type__enum_values_by_name[10] =
+static const ProtobufCEnumValueIndex dbg__request__type__enum_values_by_name[12] =
 {
-  { "COUNT", 9 },
+  { "COUNT", 11 },
   { "DEBUG_PRINT", 6 },
   { "FREE", 3 },
   { "MALLOC", 2 },
   { "MEM_READ", 4 },
   { "MEM_WRITE", 5 },
   { "REBOOT", 1 },
+  { "SCSI_DVD_IN", 9 },
+  { "SCSI_DVD_OUT", 10 },
   { "SHOW_DEBUG_SCREEN", 7 },
   { "SHOW_FRONT_SCREEN", 8 },
   { "SYSINFO", 0 },
@@ -210,15 +214,15 @@ const ProtobufCEnumDescriptor dbg__request__type__descriptor =
   "Type",
   "Dbg__Request__Type",
   "dbg",
-  10,
+  12,
   dbg__request__type__enum_values_by_number,
-  10,
+  12,
   dbg__request__type__enum_values_by_name,
   1,
   dbg__request__type__value_ranges,
   NULL,NULL,NULL,NULL   /* reserved[1234] */
 };
-static const ProtobufCFieldDescriptor dbg__request__field_descriptors[5] =
+static const ProtobufCFieldDescriptor dbg__request__field_descriptors[7] =
 {
   {
     "type",
@@ -280,9 +284,35 @@ static const ProtobufCFieldDescriptor dbg__request__field_descriptors[5] =
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "command",
+    6,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_BYTES,
+    offsetof(Dbg__Request, has_command),
+    offsetof(Dbg__Request, command),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
+  {
+    "buffer",
+    7,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_BYTES,
+    offsetof(Dbg__Request, has_buffer),
+    offsetof(Dbg__Request, buffer),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned dbg__request__field_indices_by_name[] = {
   2,   /* field[2] = address */
+  6,   /* field[6] = buffer */
+  5,   /* field[5] = command */
   1,   /* field[1] = msg */
   3,   /* field[3] = size */
   0,   /* field[0] = type */
@@ -291,7 +321,7 @@ static const unsigned dbg__request__field_indices_by_name[] = {
 static const ProtobufCIntRange dbg__request__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 5 }
+  { 0, 7 }
 };
 const ProtobufCMessageDescriptor dbg__request__descriptor =
 {
@@ -301,7 +331,7 @@ const ProtobufCMessageDescriptor dbg__request__descriptor =
   "Dbg__Request",
   "dbg",
   sizeof(Dbg__Request),
-  5,
+  7,
   dbg__request__field_descriptors,
   dbg__request__field_indices_by_name,
   1,  dbg__request__number_ranges,
@@ -338,7 +368,7 @@ const ProtobufCEnumDescriptor dbg__response__type__descriptor =
   dbg__response__type__value_ranges,
   NULL,NULL,NULL,NULL   /* reserved[1234] */
 };
-static const ProtobufCFieldDescriptor dbg__response__field_descriptors[6] =
+static const ProtobufCFieldDescriptor dbg__response__field_descriptors[7] =
 {
   {
     "type",
@@ -412,9 +442,22 @@ static const ProtobufCFieldDescriptor dbg__response__field_descriptors[6] =
     0,             /* flags */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
+  {
+    "buffer",
+    7,
+    PROTOBUF_C_LABEL_OPTIONAL,
+    PROTOBUF_C_TYPE_BYTES,
+    offsetof(Dbg__Response, has_buffer),
+    offsetof(Dbg__Response, buffer),
+    NULL,
+    NULL,
+    0,             /* flags */
+    0,NULL,NULL    /* reserved1,reserved2, etc */
+  },
 };
 static const unsigned dbg__response__field_indices_by_name[] = {
   3,   /* field[3] = address */
+  6,   /* field[6] = buffer */
   2,   /* field[2] = info */
   1,   /* field[1] = msg */
   4,   /* field[4] = size */
@@ -424,7 +467,7 @@ static const unsigned dbg__response__field_indices_by_name[] = {
 static const ProtobufCIntRange dbg__response__number_ranges[1 + 1] =
 {
   { 1, 0 },
-  { 0, 6 }
+  { 0, 7 }
 };
 const ProtobufCMessageDescriptor dbg__response__descriptor =
 {
@@ -434,7 +477,7 @@ const ProtobufCMessageDescriptor dbg__response__descriptor =
   "Dbg__Response",
   "dbg",
   sizeof(Dbg__Response),
-  6,
+  7,
   dbg__response__field_descriptors,
   dbg__response__field_indices_by_name,
   1,  dbg__response__number_ranges,

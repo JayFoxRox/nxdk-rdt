@@ -1,17 +1,17 @@
 NXDK_DIR = $(CURDIR)/../nxdk
 NXDK_NET = y
 
-XBE_TITLE = triangle
+XBE_TITLE = nxdk-rdt
 GEN_XISO = $(XBE_TITLE).iso
 SRCS = $(wildcard $(CURDIR)/*.c)
 SHADER_OBJS = ps.inl vs.inl
 
 SRCS += $(CURDIR)/lib/protobuf-c/protobuf-c.c
 
-CFLAGS_EXTRA += -I$(CURDIR)
-CFLAGS_EXTRA += -I$(CURDIR)/lib
-
 include $(NXDK_DIR)/Makefile
+
+CFLAGS += -I$(CURDIR)
+CFLAGS += -I$(CURDIR)/lib
 
 .PHONY:clean_local
 clean_local:
