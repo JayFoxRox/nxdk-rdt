@@ -1,8 +1,13 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
+import sys
 import socket
 from dbg_pb2 import *
 import time
+import wave
+import struct
+
+xbox = None
 
 class XboxError(Exception):
 	def __init__(self, msg):
@@ -92,45 +97,81 @@ class Xbox(object):
 		req.type = Request.SHOW_FRONT_SCREEN
 		return self._send_simple_request(req)
 
+	def call(self, address, stack, registers=None):
+		"""Call a function"""
+		req = Request()
+		req.type = Request.CALL
+		req.address = address
+		req.data = stack
+		#FIXME: req.registers = registers
+		res = self._send_simple_request(req)
+		out_registers = {}
+		out_registers['eax'] = res.address
+		return out_registers
+
 # FIXME: Remove this one?!
 def aligned_alloc(alignment, size):
 	address = xbox.malloc(size + alignment)
 	align = alignment - (address % alignment)
 	return address + (align % alignment)
 
-def ac97_write_u8(address, value):
-	xbox.mem(address, bytearray([value]))
-def ac97_write_u32(address, value):
-	data = bytearray()
-	data += [value & 0xFF]
-	data += [(value >> 8) & 0xFF]
-	data += [(value >> 16) & 0xFF]
-	data += [(value >> 24) & 0xFF]
-	xbox.mem(address, data)
-def ac97_read_u8(address):
+def write(address, data):
+	i = 0
+	while True:
+		remaining = len(data) - i
+		#print(str(i) + " / " + str(len(data)))
+		if remaining == 0:
+			break
+		c = min(remaining, 200) # lwip will currently choke on more data [~250 bytes max?]
+		xbox.mem(address + i, data=bytes(data[i:i+c]))
+		i += c
+
+def read_u8(address):
 	data = xbox.mem(address, size=1)
-	return data[0]
-def ac97_read_u32(address):
+	return int.from_bytes(data, byteorder='little', signed=False)
+def read_u16(address):
+	data = xbox.mem(address, size=2)
+	return int.from_bytes(data, byteorder='little', signed=False)
+def read_u32(address):
 	data = xbox.mem(address, size=4)
-	return (data[3] << 24) | (data[2] << 16) | (data[1] << 8) | data[0]
+	return int.from_bytes(data, byteorder='little', signed=False)
 
+def write_u8(address, value):
+	xbox.mem(address, data=value.to_bytes(1, byteorder='little', signed=False))
+def write_u16(address, value):
+	xbox.mem(address, data=value.to_bytes(2, byteorder='little', signed=False))
+def write_u32(address, value):
+	xbox.mem(address, data=value.to_bytes(4, byteorder='little', signed=False))
 
-def MmAllocateContiguousMemory(NumberOfBytes, HighestAcceptableAddress):
-	aligned_alloc(0x1000, size)
-	assert(address <= highest_address)
-	return address
+def ac97_read_u8(address):
+	return read_u8(0xFEC00000 + address)
+def ac97_read_u16(address):
+	return read_u16(0xFEC00000 + address)
+def ac97_read_u32(address):
+	return read_u32(0xFEC00000 + address)
+
+def ac97_write_u8(address, value):
+	write_u8(0xFEC00000 + address, value)
+def ac97_write_u16(address, value):
+	write_u16(0xFEC00000 + address, value)
+def ac97_write_u32(address, value):
+	write_u32(0xFEC00000 + address, value)
 
 pcmDescriptors = 0
 spdifDescriptors = 0
 nextDescriptor = 0
 
 def XAudioPlay():
-	ac97_write_u32(0x118, 0x1d000000) # PCM out - run, allow interrupts
-	ac97_write_u32(0x178, 0x1d000000) # SPDIF out - run, allow interrupts
+	#ac97_write_u32(0x118, 0x1D000000) # PCM out - run, allow interrupts
+	#ac97_write_u32(0x178, 0x1D000000) # SPDIF out - run, allow interrupts
+	ac97_write_u32(0x118, 0x01000000) # PCM out - run
+	ac97_write_u32(0x178, 0x01000000) # SPDIF out - run
 
 def XAudioPause():
-	ac97_write_u32(0x118, 0x1c000000) # PCM out - PAUSE, allow interrupts
-	ac97_write_u32(0x178, 0x1c000000) # SPDIF out - PAUSE, allow interrupts
+	#ac97_write_u32(0x118, 0x1C000000) # PCM out - PAUSE, allow interrupts
+	#ac97_write_u32(0x178, 0x1C000000) # SPDIF out - PAUSE, allow interrupts
+	ac97_write_u32(0x118, 0x00000000) # PCM out - PAUSE
+	ac97_write_u32(0x178, 0x00000000) # SPDIF out - PAUSE
 
 # This is the function you should call when you want to give the
 # audio chip some more data.  If you have registered a callback, it
@@ -139,17 +180,21 @@ def XAudioPause():
 
 # chip doesn't run out of data
 def XAudioProvideSamples(address, length, final = False):
+	global pcmDescriptors
+	global spdifDescriptors
+	global nextDescriptor
+
 	bufferControl = 0
 
 	if final:
 		bufferControl |= 0x4000 # b14=1=last in stream
-	bufferControl |= 0x8000 # b15=1=issue IRQ on completion
+	#bufferControl |= 0x8000 # b15=1=issue IRQ on completion
 
 	#pac97device->pcmOutDescriptor[pac97device->nextDescriptorMod31].bufferStartAddress    = MmGetPhysicalAddress((PVOID)address);
 	#pac97device->pcmOutDescriptor[pac97device->nextDescriptorMod31].bufferLengthInSamples = bufferLength / (pac97device->sampleSizeInBits / 8);
 	#pac97device->pcmOutDescriptor[pac97device->nextDescriptorMod31].bufferControl         = bufferControl;
 
-	write_u32(pcmDescriptors + nextDescriptor * 8 + 0, address)
+	write_u32(pcmDescriptors + nextDescriptor * 8 + 0, MmGetPhysicalAddress(address))
 	write_u16(pcmDescriptors + nextDescriptor * 8 + 4, length)
 	write_u16(pcmDescriptors + nextDescriptor * 8 + 6, bufferControl)
 	ac97_write_u8(0x115, nextDescriptor) # set last active PCM descriptor
@@ -158,38 +203,28 @@ def XAudioProvideSamples(address, length, final = False):
 	#pac97device->pcmSpdifDescriptor[pac97device->nextDescriptorMod31].bufferLengthInSamples = bufferLength / (pac97device->sampleSizeInBits / 8);
 	#pac97device->pcmSpdifDescriptor[pac97device->nextDescriptorMod31].bufferControl         = bufferControl;
 
-	write_u32(spidfDescriptors + nextDescriptor * 8 + 0, address)
-	write_u16(spidfDescriptors + nextDescriptor * 8 + 4, length)
-	write_u16(spidfDescriptors + nextDescriptor * 8 + 6, bufferControl)
+	write_u32(spdifDescriptors + nextDescriptor * 8 + 0, MmGetPhysicalAddress(address))
+	write_u16(spdifDescriptors + nextDescriptor * 8 + 4, length)
+	write_u16(spdifDescriptors + nextDescriptor * 8 + 6, bufferControl)
 	ac97_write_u8(0x175, nextDescriptor) # set last active SPDIF descriptor
 
 	# increment to the next buffer descriptor (rolling around to 0 once you get to 31)
 	nextDescriptor = (nextDescriptor + 1) % 32
-}
-
-def write(address, data)
-	for i in range(0, len(data)):
-		xbox.mem(address + i, data[i]) #FIXME: Transfer DWORD or even full blocks if possible
 
 def XAudioInit():
-	#pac97device->mmio = (unsigned int *)0xfec00000;
-	#pac97device->nextDescriptorMod31 = 0;
-	#pac97device->callback = callback;
-	#pac97device->callbackData = data;
-	#pac97device->sampleSizeInBits = sampleSizeInBits;
-	#pac97device->numChannels = numChannels;
-
-	# initialise descriptors to all 0x00 (no samples)        
-	#memset((void *)&pac97device->pcmSpdifDescriptor[0], 0, sizeof(pac97device->pcmSpdifDescriptor));
-	#memset((void *)&pac97device->pcmOutDescriptor[0], 0, sizeof(pac97device->pcmOutDescriptor));
+	global pcmDescriptors
+	global spdifDescriptors
 
 	# perform a cold reset
 	tmp = ac97_read_u32(0x12C)
+	ac97_write_u32(0x12C, tmp & 0xFFFFFFFD)
+	time.sleep(0.1)
 	ac97_write_u32(0x12C, tmp | 2)
 	
 	# wait until the chip is finished resetting...
 	while not ac97_read_u32(0x130) & 0x100:
 		#FIXME: Wait..
+		print("Waiting")
 		pass
 
 	# clear all interrupts
@@ -199,55 +234,141 @@ def XAudioInit():
 	# tell the audio chip where it should look for the descriptors
 	#unsigned int pcmAddress = (unsigned int)&pac97device->pcmOutDescriptor[0];
 	#unsigned int spdifAddress = (unsigned int)&pac97device->pcmSpdifDescriptor[0];
-	pcmDescriptors = MmAllocateContiguousMemory(32 * 8, 0xFFFFFFFF) # Alignment should be 8 [according to openxdk code, BUT I don't want it across 2 pages for safety]
-	spdifDescriptors = MmAllocateContiguousMemory(32 * 8, 0xFFFFFFFF) # Alignment should be 8 [according to openxdk code, BUT I don't want it across 2 pages for safety]
+	pcmDescriptors = MmAllocateContiguousMemory(32 * 8) # Alignment should be 8 [according to openxdk code, BUT I don't want it across 2 pages for safety]
+	spdifDescriptors = MmAllocateContiguousMemory(32 * 8) # Alignment should be 8 [according to openxdk code, BUT I don't want it across 2 pages for safety]
 
 	# Clear the descriptors
 	write(pcmDescriptors, [0] * 32 * 8)
 	write(spdifDescriptors, [0] * 32 * 8)
+	print("PCM desc is v 0x" + format(pcmDescriptors, '08X'))
+	print("PCM desc is p 0x" + format(MmGetPhysicalAddress(pcmDescriptors), '08X'))
 
-	ac97_write_u8(0x100, 0) # no PCM input
-	ac97_write_u8(0x100, MmGetPhysicalAddress(pcmDescriptors)) # PCM
-	ac97_write_u8(0x100, MmGetPhysicalAddress(spdifDescriptors)) # SPDIF
+	ac97_write_u32(0x100, 0) # no PCM input
+	ac97_write_u32(0x110, MmGetPhysicalAddress(pcmDescriptors)) # PCM
+	ac97_write_u32(0x170, MmGetPhysicalAddress(spdifDescriptors)) # SPDIF
 
 	# default to being silent...
 	XAudioPause()
 	
 	# Register our ISR
-	if False:
-		vector = HalGetInterruptVector(AUDIO_IRQ, &irql)
-		KeInitializeDpc(&DPCObject,&DPC,NULL)
-		KeInitializeInterrupt(&InterruptObject, &ISR, NULL, vector, irql, LevelSensitive, FALSE)
-		KeConnectInterrupt(&InterruptObject)
+	#AUDIO_IRQ = 6
+	#irql_address = malloc(1)
+	#vector = HalGetInterruptVector(AUDIO_IRQ, irql_address)
+	#KeInitializeDpc(&DPCObject,&DPC,NULL)
+	#KeInitializeInterrupt(&InterruptObject, &ISR, NULL, vector, read_u8(irql_address), LevelSensitive, FALSE)
+	#KeConnectInterrupt(&InterruptObject)
 
+def resolve_export(function):
+	#FIXME: If this is a string, look up its ordinal
+	image_base = 0x80010000
+	TempPtr = read_u32(image_base + 0x3C);
+	TempPtr = read_u32(image_base + TempPtr + 0x78);
+	ExportCount = read_u32(image_base + TempPtr + 0x14);
+	ExportBase = image_base + read_u32(image_base + TempPtr + 0x1C);
+	#FIXME: Read all exports at once and parse them locally
+	
+	#for i in range(0, ExportCount):
+	#	ordinal = i + 1
+	#	print("@" + str(ordinal) + ": 0x" + format(image_base + read_u32(ExportBase + i * 4), '08X'))
+
+	index = (function - 1) # Ordinal
+
+	return image_base + read_u32(ExportBase + index * 4)
+
+def MmAllocateContiguousMemory(NumberOfBytes):
+	return call_stdcall(165, "<I", NumberOfBytes)
+
+def MmGetPhysicalAddress(BaseAddress):
+	return call_stdcall(173, "<I", BaseAddress)
+
+def call_stdcall(function, types, *arguments):
+	address = resolve_export(function)
+	registers = xbox.call(address, struct.pack(types, *arguments))
+	return registers['eax']
 
 def main():
+	global xbox
+
 	xbox = Xbox()
-	addr = ("127.0.0.1", 8080)
-	# addr = ("10.0.1.14", 80)
+	addr = (sys.argv[1], 9269)
+
+	wav = wave.open(sys.argv[2], 'rb')
+	print(wav.getframerate())
+	assert(wav.getnchannels() == 2)
+	assert(wav.getsampwidth() == 2)
+	assert(wav.getframerate() == 48000)
 
 	# Connect to the Xbox, display system info
 	xbox.connect(addr)
-	print xbox.info()
+	print(xbox.info())
 
-	# Print something to the screen
-	xbox.debug_print("Hello!")
+	# Resolve some export
+#	if True:
+		#resolve_export(1)
+#		addr = MmAllocateContiguousMemory(0x1000)
+#		print("Got 0x" + format(addr, '08X'))
 
-	# Initialize audio
-	XAudioInit()
+	def ac97_status():
+		print("CIV=0x" + format(ac97_read_u8(0x114), '02X'))
+		print("LVI=0x" + format(ac97_read_u8(0x115), '02X'))
+		print("SR=0x" + format(ac97_read_u16(0x116), '04X'))
+		print("pos=0x" + format(ac97_read_u16(0x118), '04X'))
+		print("piv=0x" + format(ac97_read_u16(0x11A), '04X'))
+		print("CR=0x" + format(ac97_read_u8(0x11B), '02X'))
+		print("global control=0x" + format(ac97_read_u32(0x12C), '08X'))
+		print("global status=0x" + format(ac97_read_u32(0x130), '08X'))
+		def dump_buffers(addr):
+			descriptor = 0x80000000 | ac97_read_u32(addr)
+			print("??? desc is p 0x" + format(descriptor, '08X'))
+			# FIXME: Download all descriptors in one packet and then parse here
+			for i in range(0, 32):
+				addr = read_u32(descriptor + i * 8 + 0)
+				length = read_u16(descriptor + i * 8 + 4)
+				control = read_u16(descriptor + i * 8 + 6)
+				print(str(i) + ": 0x" + format(addr, '08X') + " (" + str(length) + " samples); control: 0x" + format(control, '04X'))
+		dump_buffers(0x110)
+		dump_buffers(0x170)
 
-	# Each buffer is 65534 bytes, we can have up to 32 buffers.. so do this
-	while len(samples) > 0:
-		max_len = 65534
-		if len(samples) > max_len:
-			data = samples[0:max_len]
-			samples = samples[max_len:]
-		else:
-			data = samples
-			samples = []
-		address = MmAllocateContiguousMemory(len(data), 0xFFFFFFFF)
-		write(address, data)
-		XAudioProvideSamples(address, len(data))
+		#ac97_write_u32(0x110, MmGetPhysicalAddress(pcmDescriptors)) # PCM
+		#ac97_write_u32(0x170, MmGetPhysicalAddress(spdifDescriptors)) # SPDIF
+
+	#ac97_status()
+	#ac97_write_u16(0x02, 0xFFFF) # Front volume [not working?!]
+	#ac97_write_u16(0x18, 0xFFFF) # PCM volume [not working?!]
+	#print("vol?=0x" + format(ac97_read_u16(0x18), '04X'))
+	#print("vol?=0x" + format(ac97_read_u16(0x02), '04X'))
+
+	# Audio test	
+	if True:
+
+		# Print something to the screen
+		xbox.debug_print("Audio init!")
+
+		ac97_status()
+
+		# Initialize audio
+		XAudioInit()
+
+		xbox.debug_print("Audio load!")
+
+		# Don't use more than 32 buffers.. or you will overwrite the beginning
+		while True:
+			data = wav.readframes(0xFFFF // 2)
+			if len(data) == 0:
+				break
+			address = MmAllocateContiguousMemory(len(data))
+			print("Allocated " + str(len(data)) + " bytes")
+			write(address, data)
+			XAudioProvideSamples(address, len(data) // 2)
+			print("next buffer")
+
+		xbox.debug_print("Audio play!")
+
+		XAudioPlay()
+
+		xbox.debug_print("Audio end!")
+
+		ac97_status()
 	
 	#xbox.reboot()
 	xbox.disconnect()

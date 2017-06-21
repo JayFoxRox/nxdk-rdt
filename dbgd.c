@@ -24,7 +24,7 @@
 #include "net.h"
 #include "dbgd.h"
 
-#define DBGD_PORT 80
+#define DBGD_PORT 9269
 
 #ifndef HTTPD_DEBUG
 #define HTTPD_DEBUG LWIP_DBG_OFF
@@ -39,6 +39,7 @@ static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_debug_print(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_show_debug_screen(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res);
+static int dbgd_call(Dbg__Request *req, Dbg__Response *res);
 
 typedef int (*dbgd_req_handler)(Dbg__Request *req, Dbg__Response *res);
 static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
@@ -51,6 +52,7 @@ static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
     &dbgd_debug_print,
     &dbgd_show_debug_screen,
     &dbgd_show_front_screen,
+    &dbgd_call
 };
 
 static void dbgd_serve(struct netconn *conn)
@@ -219,17 +221,17 @@ static int dbgd_mem_read(Dbg__Request *req, Dbg__Response *res)
     unsigned int s = req->size;
 
     while((s > 0) && (s % 4 == 0)) {
-      *(uint32_t*)&res->data.data[i] = *(uint32_t*)(req->address + i);
+      *(uint32_t*)&res->data.data[i] = *(volatile uint32_t*)(req->address + i);
       i += 4;
       s -= 4;
     }
     while((s > 0) && (s % 2 == 0)) {
-      *(uint16_t*)&res->data.data[i] = *(uint16_t*)(req->address + i);
+      *(uint16_t*)&res->data.data[i] = *(volatile uint16_t*)(req->address + i);
       i += 2;
       s -= 2;
     }
     while(s > 0) {
-      *(uint8_t*)&res->data.data[i] = *(uint8_t*)(req->address + i);
+      *(uint8_t*)&res->data.data[i] = *(volatile uint8_t*)(req->address + i);
       i += 1;
       s -= 1;
     }
@@ -243,20 +245,20 @@ static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res)
         return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
 
     unsigned int i = 0;
-    unsigned int s = req->size;
+    unsigned int s = req->data.len;
 
     while((s > 0) && (s % 4 == 0)) {
-      *(uint32_t*)(req->address + i) = *(uint32_t*)&res->data.data[i];
+      *(volatile uint32_t*)(req->address + i) = *(uint32_t*)&req->data.data[i];
       i += 4;
       s -= 4;
     }
     while((s > 0) && (s % 2 == 0)) {
-      *(uint16_t*)(req->address + i) = *(uint16_t*)&res->data.data[i];
+      *(volatile uint16_t*)(req->address + i) = *(uint16_t*)&req->data.data[i];
       i += 2;
       s -= 2;
     }
     while(s > 0) {
-      *(uint8_t*)(req->address + i) = *(uint8_t*)&res->data.data[i];
+      *(volatile uint8_t*)(req->address + i) = *(uint8_t*)&req->data.data[i];
       i += 1;
       s -= 1;
     }
@@ -282,5 +284,83 @@ static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res)
 {
     pb_show_front_screen();
 
+    return DBG__RESPONSE__TYPE__OK;
+}
+
+static __attribute__((__stdcall__)) uint32_t test(uint32_t a, uint32_t b) {
+  debugPrint("test(%d, %d)\n", a, b);
+  return a + b;
+}
+
+static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
+{
+    if (!req->has_address)
+        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+
+    size_t stack_size = 0x1000;
+    uint8_t* stack_data = (uint8_t*)malloc(stack_size); // FIXME: Calculate correct size
+
+    static uint32_t stack_pointer;
+    static uint32_t stack_backup;
+    static uint32_t address;
+ 
+    stack_pointer = (uint32_t)&stack_data[stack_size];
+    address = req->address;
+
+    // Push stack contents
+
+    if (req->has_data) {
+      stack_pointer -= req->data.len;
+      memcpy((void*)stack_pointer, req->data.data, req->data.len);
+    }
+
+    // This is where the call will happen
+
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // EAX
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // ECX
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // EDX
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // EBX
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // ESP (Will be ignored)
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // EBP
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // ESI
+    stack_pointer -= 4;
+    *(uint32_t*)(stack_pointer) = 0; // EDI
+
+    asm("pusha\n"
+        "mov %%esp, %[stack_backup]\n" // Keep copy of original stack
+
+        "mov %[stack_pointer], %%esp\n"
+        "popa\n" // Load all registers
+
+        "call *%[address]\n" // Call the function
+
+        "mov %[stack_pointer], %%esp\n" // push all register values to stack
+        "add $32, %%esp\n"
+        "pusha\n"
+
+        "mov %[stack_backup], %%esp\n" // Recover original stack
+        "popa\n"
+
+        : // No outputs
+        : [stack_pointer] "m" (stack_pointer),
+          [stack_backup]  "m" (stack_backup),
+          [address]       "m" (address)
+        : "memory");
+
+    uint32_t eax = *(uint32_t*)(stack_pointer + 7*4);
+
+    //FIXME: Move to a new var instead!
+    res->has_address = 1;
+    res->address = eax;  
+
+    free(stack_data);
+  
     return DBG__RESPONSE__TYPE__OK;
 }
