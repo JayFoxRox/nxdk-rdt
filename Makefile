@@ -13,11 +13,9 @@ CFLAGS += -I$(CURDIR)/lib
 
 include $(NXDK_DIR)/Makefile
 
-.PHONY:clean_local
-clean_local:
+.PHONY:clean-local
+clean-local: clean
 	rm -f *.inl* log.txt dump.cap main.lib
-
-clean: clean_local
 
 %_pb2.py: %.proto
 	protoc --python_out=$(CURDIR)/ $(notdir $<)

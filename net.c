@@ -21,7 +21,7 @@
 
 #include "net.h"
 
-#define USE_DHCP         1
+#define USE_DHCP         0
 #define PKT_TMR_INTERVAL 5 /* ms */
 #define DEBUGGING        0
 
@@ -52,8 +52,8 @@ int net_init(void)
     IP4_ADDR(&ipaddr, 0,0,0,0);
     IP4_ADDR(&netmask, 0,0,0,0);
 #else
-    IP4_ADDR(&gw, 10,0,1,1);
-    IP4_ADDR(&ipaddr, 10,0,1,7);
+    IP4_ADDR(&gw, 192,168,177,1);
+    IP4_ADDR(&ipaddr, 192,168,177,2);
     IP4_ADDR(&netmask, 255,255,255,0);
 #endif
 

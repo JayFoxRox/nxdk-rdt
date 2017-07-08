@@ -18,9 +18,9 @@ _sym_db = _symbol_database.Default()
 DESCRIPTOR = _descriptor.FileDescriptor(
   name='dbg.proto',
   package='dbg',
-  serialized_pb=_b('\n\tdbg.proto\x12\x03\x64\x62g\"\x1d\n\x07SysInfo\x12\x12\n\ntick_count\x18\x01 \x02(\x03\"\x84\x02\n\x07Request\x12\x1f\n\x04type\x18\x01 \x02(\x0e\x32\x11.dbg.Request.Type\x12\x0b\n\x03msg\x18\x02 \x01(\t\x12\x0f\n\x07\x61\x64\x64ress\x18\x03 \x01(\x05\x12\x0c\n\x04size\x18\x04 \x01(\x05\x12\r\n\x05value\x18\x05 \x01(\x03\"\x9c\x01\n\x04Type\x12\x0b\n\x07SYSINFO\x10\x00\x12\n\n\x06REBOOT\x10\x01\x12\n\n\x06MALLOC\x10\x02\x12\x08\n\x04\x46REE\x10\x03\x12\x0c\n\x08MEM_READ\x10\x04\x12\r\n\tMEM_WRITE\x10\x05\x12\x0f\n\x0b\x44\x45\x42UG_PRINT\x10\x06\x12\x15\n\x11SHOW_DEBUG_SCREEN\x10\x07\x12\x15\n\x11SHOW_FRONT_SCREEN\x10\x08\x12\t\n\x05\x43OUNT\x10\t\"\xc8\x01\n\x08Response\x12 \n\x04type\x18\x01 \x02(\x0e\x32\x12.dbg.Response.Type\x12\x0b\n\x03msg\x18\x02 \x01(\t\x12\x1a\n\x04info\x18\x03 \x01(\x0b\x32\x0c.dbg.SysInfo\x12\x0f\n\x07\x61\x64\x64ress\x18\x04 \x01(\x05\x12\x0c\n\x04size\x18\x05 \x01(\x05\x12\r\n\x05value\x18\x06 \x01(\x03\"C\n\x04Type\x12\x06\n\x02OK\x10\x00\x12\x15\n\x11\x45RROR_UNSUPPORTED\x10\x01\x12\x1c\n\x18\x45RROR_INCOMPLETE_REQUEST\x10\x02')
+  syntax='proto2',
+  serialized_pb=_b('\n\tdbg.proto\x12\x03\x64\x62g\"\x1d\n\x07SysInfo\x12\x12\n\ntick_count\x18\x01 \x02(\x03\"\x8d\x02\n\x07Request\x12\x1f\n\x04type\x18\x01 \x02(\x0e\x32\x11.dbg.Request.Type\x12\x0b\n\x03msg\x18\x02 \x01(\t\x12\x0f\n\x07\x61\x64\x64ress\x18\x03 \x01(\r\x12\x0c\n\x04size\x18\x04 \x01(\r\x12\x0c\n\x04\x64\x61ta\x18\x05 \x01(\x0c\"\xa6\x01\n\x04Type\x12\x0b\n\x07SYSINFO\x10\x00\x12\n\n\x06REBOOT\x10\x01\x12\n\n\x06MALLOC\x10\x02\x12\x08\n\x04\x46REE\x10\x03\x12\x0c\n\x08MEM_READ\x10\x04\x12\r\n\tMEM_WRITE\x10\x05\x12\x0f\n\x0b\x44\x45\x42UG_PRINT\x10\x06\x12\x15\n\x11SHOW_DEBUG_SCREEN\x10\x07\x12\x15\n\x11SHOW_FRONT_SCREEN\x10\x08\x12\x08\n\x04\x43\x41LL\x10\t\x12\t\n\x05\x43OUNT\x10\n\"\xc7\x01\n\x08Response\x12 \n\x04type\x18\x01 \x02(\x0e\x32\x12.dbg.Response.Type\x12\x0b\n\x03msg\x18\x02 \x01(\t\x12\x1a\n\x04info\x18\x03 \x01(\x0b\x32\x0c.dbg.SysInfo\x12\x0f\n\x07\x61\x64\x64ress\x18\x04 \x01(\r\x12\x0c\n\x04size\x18\x05 \x01(\r\x12\x0c\n\x04\x64\x61ta\x18\x06 \x01(\x0c\"C\n\x04Type\x12\x06\n\x02OK\x10\x00\x12\x15\n\x11\x45RROR_UNSUPPORTED\x10\x01\x12\x1c\n\x18\x45RROR_INCOMPLETE_REQUEST\x10\x02')
 )
-_sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 
 
@@ -67,14 +67,18 @@ _REQUEST_TYPE = _descriptor.EnumDescriptor(
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='COUNT', index=9, number=9,
+      name='CALL', index=9, number=9,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='COUNT', index=10, number=10,
       options=None,
       type=None),
   ],
   containing_type=None,
   options=None,
-  serialized_start=154,
-  serialized_end=310,
+  serialized_start=153,
+  serialized_end=319,
 )
 _sym_db.RegisterEnumDescriptor(_REQUEST_TYPE)
 
@@ -99,8 +103,8 @@ _RESPONSE_TYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=446,
-  serialized_end=513,
+  serialized_start=454,
+  serialized_end=521,
 )
 _sym_db.RegisterEnumDescriptor(_RESPONSE_TYPE)
 
@@ -127,6 +131,7 @@ _SYSINFO = _descriptor.Descriptor(
   ],
   options=None,
   is_extendable=False,
+  syntax='proto2',
   extension_ranges=[],
   oneofs=[
   ],
@@ -158,22 +163,22 @@ _REQUEST = _descriptor.Descriptor(
       options=None),
     _descriptor.FieldDescriptor(
       name='address', full_name='dbg.Request.address', index=2,
-      number=3, type=5, cpp_type=1, label=1,
+      number=3, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     _descriptor.FieldDescriptor(
       name='size', full_name='dbg.Request.size', index=3,
-      number=4, type=5, cpp_type=1, label=1,
+      number=4, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     _descriptor.FieldDescriptor(
-      name='value', full_name='dbg.Request.value', index=4,
-      number=5, type=3, cpp_type=2, label=1,
-      has_default_value=False, default_value=0,
+      name='data', full_name='dbg.Request.data', index=4,
+      number=5, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -186,11 +191,12 @@ _REQUEST = _descriptor.Descriptor(
   ],
   options=None,
   is_extendable=False,
+  syntax='proto2',
   extension_ranges=[],
   oneofs=[
   ],
   serialized_start=50,
-  serialized_end=310,
+  serialized_end=319,
 )
 
 
@@ -224,22 +230,22 @@ _RESPONSE = _descriptor.Descriptor(
       options=None),
     _descriptor.FieldDescriptor(
       name='address', full_name='dbg.Response.address', index=3,
-      number=4, type=5, cpp_type=1, label=1,
+      number=4, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     _descriptor.FieldDescriptor(
       name='size', full_name='dbg.Response.size', index=4,
-      number=5, type=5, cpp_type=1, label=1,
+      number=5, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     _descriptor.FieldDescriptor(
-      name='value', full_name='dbg.Response.value', index=5,
-      number=6, type=3, cpp_type=2, label=1,
-      has_default_value=False, default_value=0,
+      name='data', full_name='dbg.Response.data', index=5,
+      number=6, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b(""),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
@@ -252,11 +258,12 @@ _RESPONSE = _descriptor.Descriptor(
   ],
   options=None,
   is_extendable=False,
+  syntax='proto2',
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=313,
-  serialized_end=513,
+  serialized_start=322,
+  serialized_end=521,
 )
 
 _REQUEST.fields_by_name['type'].enum_type = _REQUEST_TYPE
@@ -267,6 +274,7 @@ _RESPONSE_TYPE.containing_type = _RESPONSE
 DESCRIPTOR.message_types_by_name['SysInfo'] = _SYSINFO
 DESCRIPTOR.message_types_by_name['Request'] = _REQUEST
 DESCRIPTOR.message_types_by_name['Response'] = _RESPONSE
+_sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 SysInfo = _reflection.GeneratedProtocolMessageType('SysInfo', (_message.Message,), dict(
   DESCRIPTOR = _SYSINFO,

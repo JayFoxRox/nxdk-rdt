@@ -35,7 +35,8 @@ typedef enum _Dbg__Request__Type {
   DBG__REQUEST__TYPE__DEBUG_PRINT = 6,
   DBG__REQUEST__TYPE__SHOW_DEBUG_SCREEN = 7,
   DBG__REQUEST__TYPE__SHOW_FRONT_SCREEN = 8,
-  DBG__REQUEST__TYPE__COUNT = 9
+  DBG__REQUEST__TYPE__CALL = 9,
+  DBG__REQUEST__TYPE__COUNT = 10
     PROTOBUF_C__FORCE_ENUM_TO_BE_INT_SIZE(DBG__REQUEST__TYPE)
 } Dbg__Request__Type;
 typedef enum _Dbg__Response__Type {
@@ -68,24 +69,24 @@ struct  _Dbg__Request
    */
   char *msg;
   /*
-   * FREE, MEM_READ, MEM_WRITE
+   * FREE, MEM_READ, MEM_WRITE, CALL
    */
   protobuf_c_boolean has_address;
-  int32_t address;
+  uint32_t address;
   /*
-   * MALLOC, MEM_READ, MEM_WRITE
+   * MALLOC, MEM_READ
    */
   protobuf_c_boolean has_size;
-  int32_t size;
+  uint32_t size;
   /*
    * MEM_WRITE
    */
-  protobuf_c_boolean has_value;
-  int64_t value;
+  protobuf_c_boolean has_data;
+  ProtobufCBinaryData data;
 };
 #define DBG__REQUEST__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&dbg__request__descriptor) \
-    , 0, NULL, 0,0, 0,0, 0,0 }
+    , 0, NULL, 0,0, 0,0, 0,{0,NULL} }
 
 
 struct  _Dbg__Response
@@ -105,21 +106,21 @@ struct  _Dbg__Response
    * MALLOC
    */
   protobuf_c_boolean has_address;
-  int32_t address;
+  uint32_t address;
   /*
    * 
    */
   protobuf_c_boolean has_size;
-  int32_t size;
+  uint32_t size;
   /*
    * MEM_READ
    */
-  protobuf_c_boolean has_value;
-  int64_t value;
+  protobuf_c_boolean has_data;
+  ProtobufCBinaryData data;
 };
 #define DBG__RESPONSE__INIT \
  { PROTOBUF_C_MESSAGE_INIT (&dbg__response__descriptor) \
-    , 0, NULL, NULL, 0,0, 0,0, 0,0 }
+    , 0, NULL, NULL, 0,0, 0,0, 0,{0,NULL} }
 
 
 /* Dbg__SysInfo methods */
