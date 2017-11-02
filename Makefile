@@ -1,4 +1,9 @@
+ifndef NXDK_DIR
+$(warning ==> Warning! environment variable "NDXK_DIR" not set! <==)
+$(warning now trying to guess...)
+$(warning errors may arise)
 NXDK_DIR = $(CURDIR)/../nxdk
+endif
 NXDK_NET = y
 
 XBE_TITLE = nxdk-rdt
