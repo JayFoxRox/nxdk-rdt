@@ -354,11 +354,14 @@ static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
           [address]       "m" (address)
         : "memory");
 
-    uint32_t eax = *(uint32_t*)(stack_pointer + 7*4);
+    uint32_t reg_eax = *(uint32_t*)(stack_pointer + 7*4);
+    uint32_t reg_edx = *(uint32_t*)(stack_pointer + 5*4);
 
-    //FIXME: Move to a new var instead!
-    res->has_address = 1;
-    res->address = eax;  
+    res->has_eax = 1;
+    res->has_edx = 1;
+    res->eax = reg_eax;
+    res->edx = reg_edx;
+
 
     free(stack_data);
   

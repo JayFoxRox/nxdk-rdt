@@ -41,4 +41,6 @@ message Response {
 	optional uint32  address = 4; // MALLOC
 	optional uint32  size    = 5; //
 	optional bytes   data    = 6; // MEM_READ
+	optional uint32  eax     = 7; //CALL
+	optional uint32  edx     = 8; //CALL
 }
