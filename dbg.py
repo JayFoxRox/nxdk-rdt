@@ -58,17 +58,21 @@ class Xbox(object):
 		req.address = addr
 		return self._send_simple_request(req)
 
-	def mem(self, addr, value=None):
-		"""Read/write system memory"""
-		write = value is not None
+	def mem_read(self, addr, size):
+		"""read memory"""
 		req = Request()
-		req.type    = Request.MEM_WRITE if write else Request.MEM_READ
+		req.type = Request.MEM_READ
+		req.size = size
 		req.address = addr
-		req.size    = 1 # TODO: Support word, dword, qword accesses
-		if write:
-			req.value = value
-		res = self._send_simple_request(req)
-		return res if write else res.value
+		return self._send_simple_request(req).data
+
+	def mem_write(self, addr, data):
+		"""write memory"""
+		req = Request()
+		req.type = Request.MEM_WRITE
+		req.data = data
+		req.address = addr
+		return self._send_simple_request(req)
 
 	def debug_print(self, string):
 		"""Print a debug string to the screen"""
@@ -109,8 +113,8 @@ def main():
 	addr = xbox.malloc(1024)
 	val = 0x5A
 	print("Allocated memory at 0x%x" % addr)
-	xbox.mem(addr, val)
-	assert(xbox.mem(addr) == val)
+	xbox.mem_write(addr, bytes([val]))
+	assert(xbox.mem_read(addr, 1) == val)
 	xbox.free(addr)
 	
 	#xbox.reboot()
