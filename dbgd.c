@@ -301,62 +301,42 @@ static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res)
     return DBG__RESPONSE__TYPE__OK;
 }
 
-static __attribute__((__stdcall__)) uint32_t test(uint32_t a, uint32_t b) {
-  debugPrint("test(%d, %d)\n", a, b);
-  return a + b;
-}
-
 static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
 {
     if (!req->has_address)
         return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
 
-    size_t stack_size = 0x1000;
-    uint8_t* stack_data = (uint8_t*)malloc(stack_size); // FIXME: Calculate correct size
-
+    // These variables will be used as parameters for inline assembly.
+    // We make them static as the stack pointer will be changed.
+    // So we want to address them globally.
     static uint32_t stack_pointer;
     static uint32_t stack_backup;
     static uint32_t address;
- 
+
+    // Allocate a stack for working and space for supplied data
+    size_t stack_size = 0x1000;
+    if (req->has_data) {
+      stack_size += req->data.len;
+    }
+    uint8_t* stack_data = malloc(stack_size);
+
     stack_pointer = (uint32_t)&stack_data[stack_size];
     address = req->address;
 
     // Push stack contents
-
     if (req->has_data) {
       stack_pointer -= req->data.len;
       memcpy((void*)stack_pointer, req->data.data, req->data.len);
     }
 
-    // This is where the call will happen
-
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // EAX
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // ECX
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // EDX
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // EBX
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // ESP (Will be ignored)
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // EBP
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // ESI
-    stack_pointer -= 4;
-    *(uint32_t*)(stack_pointer) = 0; // EDI
-
     asm("pusha\n"
         "mov %%esp, %[stack_backup]\n" // Keep copy of original stack
 
         "mov %[stack_pointer], %%esp\n"
-        "popa\n" // Load all registers
 
         "call *%[address]\n" // Call the function
 
         "mov %[stack_pointer], %%esp\n" // push all register values to stack
-        "add $32, %%esp\n"
         "pusha\n"
 
         "mov %[stack_backup], %%esp\n" // Recover original stack
@@ -368,11 +348,14 @@ static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
           [address]       "m" (address)
         : "memory");
 
-    uint32_t eax = *(uint32_t*)(stack_pointer + 7*4);
+    // Return a set of registers from pusha
+    res->data.len  = 32;
+    res->data.data = get_transfer_buffer(res->data.len);
+    res->has_data = 1;
 
-    //FIXME: Move to a new var instead!
-    res->has_address = 1;
-    res->address = eax;  
+    // Copy data into return stack
+    stack_pointer -= res->data.len;
+    memcpy(res->data.data, (void*)stack_pointer, res->data.len);
 
     free(stack_data);
   
