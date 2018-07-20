@@ -30,6 +30,20 @@
 #define HTTPD_DEBUG LWIP_DBG_OFF
 #endif
 
+static void* get_transfer_buffer(uint32_t size) {
+    static uint32_t buffer_size = 0;
+    static void* buffer = NULL;
+
+    if (size > buffer_size) {
+        if (buffer != NULL) {
+            free(buffer);
+        }
+        buffer = malloc(size);
+        buffer_size = size;
+    }
+    return buffer;
+}
+
 static int dbgd_sysinfo(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_reboot(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_malloc(Dbg__Request *req, Dbg__Response *res);
@@ -39,6 +53,7 @@ static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_debug_print(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_show_debug_screen(Dbg__Request *req, Dbg__Response *res);
 static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res);
+static int dbgd_call(Dbg__Request *req, Dbg__Response *res);
 
 typedef int (*dbgd_req_handler)(Dbg__Request *req, Dbg__Response *res);
 static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
@@ -51,6 +66,7 @@ static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
     &dbgd_debug_print,
     &dbgd_show_debug_screen,
     &dbgd_show_front_screen,
+    &dbgd_call
 };
 
 static void dbgd_serve(struct netconn *conn)
@@ -211,21 +227,55 @@ static int dbgd_mem_read(Dbg__Request *req, Dbg__Response *res)
     res->address = req->address;
     res->has_address = 1;
 
-    res->size = 1; /* FIXME: add word, dword, qword support */
-    res->has_size = 1;
+    res->data.len  = req->size;
+    res->data.data = get_transfer_buffer(res->data.len);
+    res->has_data = 1;
 
-    res->value = *((uint8_t*)(req->address));
-    res->has_value = 1;
+    unsigned int i = 0;
+    unsigned int s = req->size;
+
+    while(s >= 4) {
+      *(uint32_t*)&res->data.data[i] = *(volatile uint32_t*)(req->address + i);
+      i += 4;
+      s -= 4;
+    }
+    while(s >= 2) {
+      *(uint16_t*)&res->data.data[i] = *(volatile uint16_t*)(req->address + i);
+      i += 2;
+      s -= 2;
+    }
+    while(s >= 1) {
+      *(uint8_t*)&res->data.data[i] = *(volatile uint8_t*)(req->address + i);
+      i += 1;
+      s -= 1;
+    }
 
     return DBG__RESPONSE__TYPE__OK;
 }
 
 static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res)
 {
-    if (!req->has_address || !req->has_size || !req->has_value)
+    if (!req->has_address || !req->has_data)
         return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
 
-    *((uint8_t*)(req->address)) = (uint8_t)req->value;
+    unsigned int i = 0;
+    unsigned int s = req->data.len;
+
+    while(s >= 4) {
+      *(volatile uint32_t*)(req->address + i) = *(uint32_t*)&req->data.data[i];
+      i += 4;
+      s -= 4;
+    }
+    while(s >= 2) {
+      *(volatile uint16_t*)(req->address + i) = *(uint16_t*)&req->data.data[i];
+      i += 2;
+      s -= 2;
+    }
+    while(s >= 1) {
+      *(volatile uint8_t*)(req->address + i) = *(uint8_t*)&req->data.data[i];
+      i += 1;
+      s -= 1;
+    }
 
     return DBG__RESPONSE__TYPE__OK;
 }
@@ -248,5 +298,67 @@ static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res)
 {
     pb_show_front_screen();
 
+    return DBG__RESPONSE__TYPE__OK;
+}
+
+static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
+{
+    if (!req->has_address)
+        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+
+    // These variables will be used as parameters for inline assembly.
+    // We make them static as the stack pointer will be changed.
+    // So we want to address them globally.
+    static uint32_t stack_pointer;
+    static uint32_t stack_backup;
+    static uint32_t address;
+
+    // Allocate a stack for working and space for supplied data
+    size_t stack_size = 0x1000;
+    if (req->has_data) {
+      stack_size += req->data.len;
+    }
+    uint8_t* stack_data = malloc(stack_size);
+
+    // Push optional stack contents, starting at top of stack
+    stack_pointer = (uint32_t)&stack_data[stack_size];
+    if (req->has_data) {
+      stack_pointer -= req->data.len;
+      memcpy((void*)stack_pointer, req->data.data, req->data.len);
+    }
+
+    // Set address to call
+    address = req->address;
+
+    asm("pusha\n"
+        "mov %%esp, %[stack_backup]\n" // Keep copy of original stack
+
+        "mov %[stack_pointer], %%esp\n"
+
+        "call *%[address]\n" // Call the function
+
+        "mov %[stack_pointer], %%esp\n" // push all register values to stack
+        "pusha\n"
+
+        "mov %[stack_backup], %%esp\n" // Recover original stack
+        "popa\n"
+
+        : // No outputs
+        : [stack_pointer] "m" (stack_pointer),
+          [stack_backup]  "m" (stack_backup),
+          [address]       "m" (address)
+        : "memory");
+
+    // Get transfer buffer for a set of registers from pusha
+    res->data.len  = 32;
+    res->data.data = get_transfer_buffer(res->data.len);
+    res->has_data = 1;
+
+    // Copy pusha data into return buffer
+    stack_pointer -= res->data.len;
+    memcpy(res->data.data, (void*)stack_pointer, res->data.len);
+
+    free(stack_data);
+  
     return DBG__RESPONSE__TYPE__OK;
 }
