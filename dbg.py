@@ -130,12 +130,36 @@ def main():
 	assert(xbox.mem_read(addr, 1)[0] == val)
 	xbox.free(addr)
 
-	# Inject a function which does `rdtsc; ret`
+	# Inject a function which does `rdtsc; ret`.
+	# RDTSC means "Read Time Stamp Counter". The Time Stamp Counter is a value,
+	# which is incremented every CPU clock cycle.
 	code = bytes([0x0F, 0x31, 0xC3])
 	addr = xbox.malloc(len(code))
 	xbox.mem_write(addr, code)
-	eax = xbox.call(addr)
-	print("Call of RDTSC returned 0x%08X" % eax)
+
+	# Repeatedly call the injected function until we have a stable timer
+	last_time = None
+	print("Testing call using RDTSC (please wait)")
+	while True:
+
+		# Ask the Xbox for the RDTSC value
+		eax = xbox.call(addr)
+
+		# The timer runs at 733MHz (Xbox CPU Clock speed); We convert it to seconds
+		current_time = eax / 733333333.33
+
+		# This is necessary as the timer might wrap around between reads
+		# If so, first timestamp would appear to be later than the second timestamp
+		# Also, at startup we only have one measurement, so we can't compare
+		if last_time is not None and current_time > last_time:
+			break
+
+		# We wait 1 second (this is the time we expect to measure)
+		time.sleep(1.0)
+		last_time = current_time
+
+	# Print the measured time (should be ~1.0 seconds) and free function
+	print("RDTSC measured %.3f seconds" % (current_time - last_time))
 	xbox.free(addr)
 	
 	#xbox.reboot()
