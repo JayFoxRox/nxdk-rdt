@@ -320,14 +320,15 @@ static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
     }
     uint8_t* stack_data = malloc(stack_size);
 
+    // Push optional stack contents, starting at top of stack
     stack_pointer = (uint32_t)&stack_data[stack_size];
-    address = req->address;
-
-    // Push stack contents
     if (req->has_data) {
       stack_pointer -= req->data.len;
       memcpy((void*)stack_pointer, req->data.data, req->data.len);
     }
+
+    // Set address to call
+    address = req->address;
 
     asm("pusha\n"
         "mov %%esp, %[stack_backup]\n" // Keep copy of original stack
@@ -348,12 +349,12 @@ static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
           [address]       "m" (address)
         : "memory");
 
-    // Return a set of registers from pusha
+    // Get transfer buffer for a set of registers from pusha
     res->data.len  = 32;
     res->data.data = get_transfer_buffer(res->data.len);
     res->has_data = 1;
 
-    // Copy data into return stack
+    // Copy pusha data into return buffer
     stack_pointer -= res->data.len;
     memcpy(res->data.data, (void*)stack_pointer, res->data.len);
 

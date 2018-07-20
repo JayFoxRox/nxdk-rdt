@@ -2,6 +2,7 @@
 import socket
 from dbg_pb2 import *
 import time
+import struct
 
 class XboxError(Exception):
 	def __init__(self, msg):
@@ -93,12 +94,13 @@ class Xbox(object):
 		req.type = Request.SHOW_FRONT_SCREEN
 		return self._send_simple_request(req)
 
-	def call(self, address, stack, registers=None):
+	def call(self, address, stack=None):
 		"""Call a function with given context"""
 		req = Request()
 		req.type = Request.CALL
 		req.address = address
-		req.data = stack
+		if stack is not None:
+			req.data = stack
 		res = self._send_simple_request(req)
 		eax = struct.unpack_from("<I", res.data, 7*4)[0]
 		return eax
@@ -126,6 +128,14 @@ def main():
 	print("Allocated memory at 0x%x" % addr)
 	xbox.mem_write(addr, bytes([val]))
 	assert(xbox.mem_read(addr, 1)[0] == val)
+	xbox.free(addr)
+
+	# Inject a function which does `rdtsc; ret`
+	code = bytes([0x0F, 0x31, 0xC3])
+	addr = xbox.malloc(len(code))
+	xbox.mem_write(addr, code)
+	eax = xbox.call(addr)
+	print("Call of RDTSC returned 0x%08X" % eax)
 	xbox.free(addr)
 	
 	#xbox.reboot()
