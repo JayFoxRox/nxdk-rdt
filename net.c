@@ -1,6 +1,8 @@
 #include "pktdrv.h"
+
 #include <hal/input.h>
 #include <hal/xbox.h>
+
 #include <lwip/api.h>
 #include <lwip/arch.h>
 #include <lwip/debug.h>
@@ -10,18 +12,18 @@
 #include <lwip/opt.h>
 #include <lwip/sys.h>
 #include <lwip/tcpip.h>
-#include <lwip/timers.h>
 #include <netif/etharp.h>
+
 #include <pbkit/pbkit.h>
-#include <protobuf-c/protobuf-c.h>
+
 #include <stdlib.h>
+
 #include <xboxkrnl/xboxkrnl.h>
 #include <xboxrt/debug.h>
 
 #include "net.h"
 
-#define USE_DHCP         1
-#define PKT_TMR_INTERVAL 5 /* ms */
+#define USE_DHCP         0
 #define DEBUGGING        0
 
 struct netif nforce_netif, *g_pnetif;
@@ -30,7 +32,6 @@ extern err_t nforceif_init(struct netif *netif);
 
 #if LWIP_NETCONN
 
-static void packet_timer(void *arg);
 static void tcpip_init_done(void *arg);
 
 int net_init(void)
@@ -51,8 +52,8 @@ int net_init(void)
     IP4_ADDR(&ipaddr, 0,0,0,0);
     IP4_ADDR(&netmask, 0,0,0,0);
 #else
-    IP4_ADDR(&gw, 10,0,1,1);
-    IP4_ADDR(&ipaddr, 10,0,1,7);
+    IP4_ADDR(&gw, 192,168,177,1);
+    IP4_ADDR(&ipaddr, 192,168,177,2);
     IP4_ADDR(&netmask, 255,255,255,0);
 #endif
 
@@ -75,8 +76,6 @@ int net_init(void)
 #if USE_DHCP
     dhcp_start(g_pnetif);
 #endif
-
-    packet_timer(NULL);
 
 #if USE_DHCP
     debugPrint("Waiting for DHCP...\n");
@@ -102,13 +101,6 @@ static void tcpip_init_done(void *arg)
 {
     sys_sem_t *init_complete = arg;
     sys_sem_signal(init_complete);
-}
-
-static void packet_timer(void *arg)
-{
-  LWIP_UNUSED_ARG(arg);
-  Pktdrv_ReceivePackets();
-  sys_timeout(PKT_TMR_INTERVAL, packet_timer, NULL);
 }
 
 #endif /* LWIP_NETCONN*/

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import socket
-from dbg_pb2 import *
 import time
 import struct
+import sys
 
 class XboxError(Exception):
 	def __init__(self, msg):
@@ -24,42 +24,36 @@ class Xbox(object):
 		self._sock.close()
 		self._sock = None
 
-	def _send_simple_request(self, req):
-		"""Send a simple request, expect success"""
-		self._sock.send(req.SerializeToString())
-		res = Response()
-		res.ParseFromString(self._sock.recv(4096))
-		if res.type != Response.OK:
-			raise XboxError(res.msg)
-		return res
-
 	def info(self):
 		"""Get system info"""
-		req = Request()
-		req.type = Request.SYSINFO
-		return self._send_simple_request(req).info
+		request_buffer = struct.pack("<B", 0)
+		self._sock.send(request_buffer)
+		response_buffer = self._sock.recv(4)
+		response_data = struct.unpack("<I", response_buffer)
+		result = {}
+		result['tick_count'] = response_data[0]
+		return result
 
 	def reboot(self):
 		"""Reboot the system"""
-		msg = Request()
-		msg.type = Request.REBOOT
-		self._sock.send(msg.SerializeToString())
+		request_buffer = struct.pack("<B", 1)
+		self._sock.send(request_buffer)
 
 	def malloc(self, size):
 		"""Allocate memory on the target"""
-		req = Request()
-		req.type = Request.MALLOC
-		req.size = size
-		return self._send_simple_request(req).address
+		request_buffer = struct.pack("<BI", 2, size)
+		self._sock.send(request_buffer)
+		response_buffer = self._sock.recv(4)
+		response_data = struct.unpack("<I", response_buffer)
+		return response_data[0]
 
-	def free(self, addr):
+	def free(self, address):
 		"""Free memory on the target"""
-		req = Request()
-		req.type = Request.FREE
-		req.address = addr
-		return self._send_simple_request(req)
+		request_buffer = struct.pack("<BI", 3, address)
+		self._sock.send(request_buffer)
 
 	def mem_read(self, addr, size):
+		return
 		"""read memory"""
 		req = Request()
 		req.type = Request.MEM_READ
@@ -68,6 +62,7 @@ class Xbox(object):
 		return self._send_simple_request(req).data
 
 	def mem_write(self, addr, data):
+		return
 		"""write memory"""
 		req = Request()
 		req.type = Request.MEM_WRITE
@@ -75,24 +70,11 @@ class Xbox(object):
 		req.address = addr
 		return self._send_simple_request(req)
 
-	def debug_print(self, string):
+	def debug_print(self, message):
 		"""Print a debug string to the screen"""
-		req = Request()
-		req.type = Request.DEBUG_PRINT
-		req.msg = string
-		return self._send_simple_request(req)
-
-	def show_debug_screen(self):
-		"""Show the debug screen"""
-		req = Request()
-		req.type = Request.SHOW_DEBUG_SCREEN
-		return self._send_simple_request(req)
-
-	def show_front_screen(self):
-		"""Show the front screen"""
-		req = Request()
-		req.type = Request.SHOW_FRONT_SCREEN
-		return self._send_simple_request(req)
+		message_buffer = message.encode('ascii')
+		request_buffer = struct.pack("<BH", 4, len(message_buffer)) + message_buffer
+		self._sock.send(request_buffer)
 
 	def call(self, address, stack=None):
 		"""Call a function with given context"""
