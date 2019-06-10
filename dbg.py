@@ -18,75 +18,78 @@ class Xbox(object):
 	def connect(self, addr):
 		"""Connect to the Xbox"""
 		self._sock = socket.create_connection(addr, 5)
+		self._sock.setblocking(1)
 
 	def disconnect(self):
 		"""Disconnect from the Xbox"""
 		self._sock.close()
 		self._sock = None
 
+	def ensure_recv(self, size):
+		#FIXME: Block
+		data = bytes()
+		while size > 0:
+			chunk = self._sock.recv(size)
+			data = data + chunk
+			size -= len(chunk)
+		return data
+
 	def info(self):
 		"""Get system info"""
 		request_buffer = struct.pack("<B", 0)
+		print(len(request_buffer))
 		self._sock.send(request_buffer)
-		response_buffer = self._sock.recv(4)
+		response_buffer = self.ensure_recv(4)
 		response_data = struct.unpack("<I", response_buffer)
 		result = {}
 		result['tick_count'] = response_data[0]
 		return result
 
+	def debug_print(self, message):
+		"""Print a debug string to the screen"""
+		message_buffer = message.encode('ascii')
+		request_buffer = struct.pack("<BH", 1, len(message_buffer)) + message_buffer
+		self._sock.send(request_buffer)
+
 	def reboot(self):
 		"""Reboot the system"""
-		request_buffer = struct.pack("<B", 1)
+		request_buffer = struct.pack("<B", 2)
 		self._sock.send(request_buffer)
 
 	def malloc(self, size):
 		"""Allocate memory on the target"""
-		request_buffer = struct.pack("<BI", 2, size)
+		request_buffer = struct.pack("<BI", 3, size)
 		self._sock.send(request_buffer)
-		response_buffer = self._sock.recv(4)
+		response_buffer = self.ensure_recv(4)
 		response_data = struct.unpack("<I", response_buffer)
 		return response_data[0]
 
 	def free(self, address):
 		"""Free memory on the target"""
-		request_buffer = struct.pack("<BI", 3, address)
+		request_buffer = struct.pack("<BI", 4, address)
 		self._sock.send(request_buffer)
 
-	def mem_read(self, addr, size):
-		return
+	def mem_read(self, address, size):
 		"""read memory"""
-		req = Request()
-		req.type = Request.MEM_READ
-		req.size = size
-		req.address = addr
-		return self._send_simple_request(req).data
+		request_buffer = struct.pack("<BII", 5, address, size)
+		self._sock.send(request_buffer)
+		response_buffer = self.ensure_recv(size)
+		return response_buffer
 
-	def mem_write(self, addr, data):
-		return
+	def mem_write(self, address, data):
 		"""write memory"""
-		req = Request()
-		req.type = Request.MEM_WRITE
-		req.data = data
-		req.address = addr
-		return self._send_simple_request(req)
-
-	def debug_print(self, message):
-		"""Print a debug string to the screen"""
-		message_buffer = message.encode('ascii')
-		request_buffer = struct.pack("<BH", 4, len(message_buffer)) + message_buffer
+		request_buffer = struct.pack("<BII", 6, address, len(data)) + data
 		self._sock.send(request_buffer)
 
 	def call(self, address, stack=None):
 		"""Call a function with given context"""
-		req = Request()
-		req.type = Request.CALL
-		req.address = address
-		if stack is not None:
-			req.data = stack
-		res = self._send_simple_request(req)
-		eax = struct.unpack_from("<I", res.data, 7*4)[0]
+		if stack is None:
+			stack = b''
+		request_buffer = struct.pack("<BII", 7, address, len(stack)) + stack
+		self._sock.send(request_buffer)
+		response_buffer = self.ensure_recv(8*4)
+		eax = struct.unpack_from("<I", response_buffer, 7*4)[0]
 		return eax
-
 
 def main():
 
@@ -102,7 +105,7 @@ def main():
 	print(xbox.info())
 
 	# Print something to the screen
-	xbox.debug_print("Hello!")
+	xbox.debug_print("Hello!\n")
 
 	# Allocate, write, read-back, free
 	addr = xbox.malloc(1024)
@@ -118,6 +121,8 @@ def main():
 	code = bytes([0x0F, 0x31, 0xC3])
 	addr = xbox.malloc(len(code))
 	xbox.mem_write(addr, code)
+	rb = xbox.mem_read(addr, 3)
+	print("%X %X %X" % (rb[0], rb[1], rb[2]))
 
 	# Repeatedly call the injected function until we have a stable timer
 	last_time = None
@@ -143,6 +148,35 @@ def main():
 	# Print the measured time (should be ~1.0 seconds) and free function
 	print("RDTSC measured %.3f seconds" % (current_time - last_time))
 	xbox.free(addr)
+	
+	repeat_count = 1
+	block_size = 2 * 1024 * 1024
+	block_pattern = bytes([0xFF]) * block_size
+	block_address = xbox.malloc(block_size);
+
+	start_time = time.time()
+
+	for i in range(repeat_count):
+		xbox.mem_write(block_address, block_pattern)
+
+		print("%u okay" % i)
+
+	end_time = time.time()
+	print("(%u Bytes) / (%f s) to Mbps" % (repeat_count * block_size, end_time - start_time))
+
+	start_time = time.time()
+
+	for i in range(repeat_count):
+		block_pattern_check = xbox.mem_read(block_address, block_size)
+		#print(block_pattern_check)
+		#print(block_pattern)
+		#assert(block_pattern_check == block_pattern)
+
+	end_time = time.time()
+	print("(%u Bytes) / (%f s) to Mbps" % (repeat_count * block_size, end_time - start_time))
+
+	xbox.free(block_address)
+	xbox.debug_print("Okay!")
 	
 	#xbox.reboot()
 	xbox.disconnect()

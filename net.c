@@ -20,7 +20,7 @@
 #include "net.h"
 
 #define USE_DHCP         0
-#define PKT_TMR_INTERVAL 5 /* ms */
+#define PKT_TMR_INTERVAL 1 /* ms */
 #define DEBUGGING        0
 
 struct netif nforce_netif, *g_pnetif;
