@@ -1,6 +1,16 @@
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <assert.h>
+
 #include <hal/input.h>
 #include <hal/xbox.h>
 #include <hal/xbox.h>
+
+#include <xboxrt/debug.h>
+
+#include <xboxkrnl/xboxkrnl.h>
+
 #include <lwip/api.h>
 #include <lwip/arch.h>
 #include <lwip/debug.h>
@@ -12,14 +22,11 @@
 #include <lwip/tcpip.h>
 #include <lwip/timers.h>
 #include <netif/etharp.h>
-#include <pbkit/pbkit.h>
-#include <pktdrv.h>
-#include <protobuf-c/protobuf-c.h>
-#include <stdlib.h>
-#include <xboxkrnl/xboxkrnl.h>
-#include <xboxrt/debug.h>
 
-#include "dbg.pb-c.h"
+#include <pktdrv.h>
+
+#include <lwip/sockets.h>
+
 #include "net.h"
 #include "dbgd.h"
 
@@ -29,144 +36,134 @@
 #define HTTPD_DEBUG LWIP_DBG_OFF
 #endif
 
-static void* get_transfer_buffer(uint32_t size) {
-    static uint32_t buffer_size = 0;
-    static void* buffer = NULL;
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
-    if (size > buffer_size) {
-        if (buffer != NULL) {
-            free(buffer);
-        }
-        buffer = malloc(size);
-        buffer_size = size;
-    }
-    return buffer;
-}
+static int dbgd_sysinfo(int fd);
+static int dbgd_debug_print(int fd);
+static int dbgd_reboot(int fd);
+static int dbgd_malloc(int fd);
+static int dbgd_free(int fd);
+static int dbgd_mem_read(int fd);
+static int dbgd_mem_write(int fd);
+static int dbgd_call(int fd);
 
-static int dbgd_sysinfo(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_reboot(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_malloc(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_free(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_mem_read(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_debug_print(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_show_debug_screen(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res);
-static int dbgd_call(Dbg__Request *req, Dbg__Response *res);
+//FIXME: This order must always be kept consistent!
 
-typedef int (*dbgd_req_handler)(Dbg__Request *req, Dbg__Response *res);
-static dbgd_req_handler handlers[DBG__REQUEST__TYPE__COUNT] = {
-    &dbgd_sysinfo,
-    &dbgd_reboot,
-    &dbgd_malloc,
-    &dbgd_free,
-    &dbgd_mem_read,
-    &dbgd_mem_write,
-    &dbgd_debug_print,
-    &dbgd_show_debug_screen,
-    &dbgd_show_front_screen,
-    &dbgd_call
+typedef int (*dbgd_req_handler)(int fd);
+static dbgd_req_handler handlers[] = {
+    &dbgd_sysinfo,     // 0
+    &dbgd_debug_print, // 1
+    &dbgd_reboot,      // 2
+    &dbgd_malloc,      // 3
+    &dbgd_free,        // 4
+    &dbgd_mem_read,    // 5
+    &dbgd_mem_write,   // 6
+    &dbgd_call         // 7
 };
 
-static void dbgd_serve(struct netconn *conn)
-{
-    Dbg__Request  *req;
-    Dbg__Response res;
-    err_t         err;
-    size_t        res_packed_size;
-    struct netbuf *inbuf;
-    uint16_t      msglen;
-    uint16_t      port = 0;
-    uint8_t       *buf;
-    uint8_t       *res_packed;
-    ip_addr_t     naddr;
+static bool ensure_recv(int fd, void* data, size_t length) {
 
-    netconn_peer(conn, &naddr, &port);
-    debugPrint("[%s connected]\n", ip4addr_ntoa(ip_2_ip4(&naddr)));
+    // Loop until all data is read
+    debugPrint("Reading %u\n", length);
+    uint8_t* cursor = data;
+    while(length > 0) {
+
+        int ret = recv(fd, cursor, length, 0);
+        debugPrint("  - chunk %u / %u\n", ret, length);
+
+        // Check for errors
+        if (ret == -1) {
+            return false;
+        }
+
+        // Check for end of stream
+        if (ret == 0) {
+            return false;
+        }
+
+        // Advance in buffer
+        assert((ret > 0) && (ret <= length));
+        cursor += ret;
+        length -= ret;
+    }
+
+    return true;
+}
+
+static void dbgd_serve(int fd, struct sockaddr address)
+{
+    char socket_address[INET_ADDRSTRLEN];
+    //FIXME: Add variant for IPv6
+    struct sockaddr_in *ip = (struct sockaddr_in *)&address;
+    inet_ntop(AF_INET, &(ip->sin_addr), socket_address, INET_ADDRSTRLEN);
+
+    debugPrint("[%s connected]\n", socket_address);
 
     while (1) {
-        /* Read the data from the port, blocking if nothing yet there. 
-         We assume the request (the part we care about) is in one netbuf */
-        err = netconn_recv(conn, &inbuf);
-        if (err != ERR_OK) {
-            break;
-        }
-        
-        netbuf_data(inbuf, (void**)&buf, &msglen);
-        req = dbg__request__unpack(NULL, msglen, buf);
 
-        dbg__response__init(&res);
-
-        if (req == NULL) {
-            debugPrint("error: request was null!\n");
-            netbuf_delete(inbuf);
-            break;
+        /* Read header */
+        uint8_t command_type;
+        bool success = ensure_recv(fd, &command_type, 1);  
+        if (!success) {
+          debugPrint("Unable to receive command\n");
+          break;
         }
 
-        if (req->type >= DBG__REQUEST__TYPE__COUNT) {
-            /* Error! Unsupported request type */
-            res.type = DBG__RESPONSE__TYPE__ERROR_UNSUPPORTED;
-            break;
-        } else {
-            res.type = handlers[req->type](req, &res);
-        }
+        /* Handle the command */
+        debugPrint("Received command %u\n", command_type);
+        assert(command_type < ARRAY_SIZE(handlers));
+        handlers[command_type](fd);
 
-        switch (res.type) {
-        case DBG__RESPONSE__TYPE__OK:
-            res.msg = "Ok";
-            break;
-        case DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST:
-            res.msg = "Incomplete Request";
-            break;
-        case DBG__RESPONSE__TYPE__ERROR_UNSUPPORTED:
-            res.msg = "Unsupported";
-            break;
-        default:
-            break;
-        }
-
-        /* Send packed response */
-        res_packed_size = dbg__response__get_packed_size(&res);
-        res_packed = malloc(res_packed_size);
-        dbg__response__pack(&res, res_packed);
-        netconn_write(conn, res_packed, res_packed_size, NETCONN_COPY);
-        free(res_packed);
-        dbg__request__free_unpacked(req, NULL);
-
-        /* Delete the buffer (netconn_recv gives us ownership,
-         so we have to make sure to deallocate the buffer) */
-        netbuf_delete(inbuf);
     }
 
     /* Close the connection */
-    netconn_close(conn);
+    close(fd);
 
-    debugPrint("[%s disconnected]\n", ip4addr_ntoa(ip_2_ip4(&naddr)));
+    debugPrint("[%s disconnected]\n", socket_address);
 }
 
 static void dbgd_thread(void *arg)
 {
-    struct netconn *conn, *newconn;
-    err_t err;
+    int ret;
     LWIP_UNUSED_ARG(arg);
 
-    conn = netconn_new(NETCONN_TCP);
-    LWIP_ERROR("invalid conn", (conn != NULL), return;);
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        debugPrint("Error when trying to create socket\n");
+        return;
+    }
 
-    netconn_bind(conn, NULL, DBGD_PORT);
-    netconn_listen(conn);
+    struct sockaddr_in address;
+    memset(&address, 0x00, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(DBGD_PORT);
+ 
+    /* Now bind the host address using bind() call.*/
+    ret = bind(fd, (struct sockaddr *)&address, sizeof(address));
+    if (ret < 0) {
+        debugPrint("Error when trying to bind\n");
+        return;
+    }
+
+    listen(fd,5);
     
-    do {
-        err = netconn_accept(conn, &newconn);
-        if (err == ERR_OK) {
-            dbgd_serve(newconn);
-            netconn_delete(newconn);
-        }
-    } while(err == ERR_OK);
+    while(true) {
+        struct sockaddr client_address;
+        socklen_t client_address_len;
+        debugPrint("Waiting for accept\n");
+        int client_fd = accept(fd, &client_address, &client_address_len);
 
-    LWIP_DEBUGF(HTTPD_DEBUG, ("dbgd_thread: netconn_accept received error %d, shutting down", err));
-    netconn_close(conn);
-    netconn_delete(conn);
+        if (client_fd == -1) {
+            debugPrint("Error in accept()\n");
+            break;
+        }
+
+        debugPrint("Accepted\n");
+        dbgd_serve(client_fd, client_address);
+    }
+
+    close(fd);
 }
 
 void dbgd_init(void)
@@ -178,132 +175,225 @@ void dbgd_init(void)
                    DEFAULT_THREAD_PRIO);
 }
 
-static int dbgd_sysinfo(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_sysinfo(int fd)
 {
-    static Dbg__SysInfo xb_info;
+    typedef struct {
+      uint32_t tick_count;
+    } ResponseData;
 
-    dbg__sys_info__init(&xb_info);
-    xb_info.tick_count = XGetTickCount();
-    res->info = &xb_info;
+    ResponseData response;
+    response.tick_count = XGetTickCount();
 
-    return DBG__RESPONSE__TYPE__OK;
+    send(fd, &response, sizeof(response), 0);
+
+    return 0;
 }
 
-static int dbgd_reboot(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_reboot(int fd)
 {
     XReboot();
     asm volatile ("jmp .");
 
-    return DBG__RESPONSE__TYPE__OK;
+    return 0;
 }
 
-static int dbgd_malloc(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_malloc(int fd)
 {
-    if (!req->has_size)
-        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+    bool success;
 
-    res->address = (uint32_t)malloc(req->size);
-    res->has_address = 1;
+    typedef struct {
+      uint32_t size;
+    } RequestData;
 
-    return DBG__RESPONSE__TYPE__OK;
+    RequestData request;
+    success = ensure_recv(fd, &request, sizeof(request));
+    assert(success);
+
+    typedef struct {
+      uint32_t address;
+    } ResponseData;
+
+    ResponseData response;
+    response.address = (uint32_t)malloc(request.size);
+
+    send(fd, &response, sizeof(response), 0);
+
+    return 0;
 }
 
-static int dbgd_free(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_free(int fd)
 {
-    if (!req->has_address)
-        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+    bool success;
 
-    free((void*)req->address);
+    typedef struct {
+      uint32_t address;
+    } RequestData;
 
-    return DBG__RESPONSE__TYPE__OK;
+    RequestData request;
+    success = ensure_recv(fd, &request, sizeof(request));
+    assert(success);
+
+    free((void*)request.address);
+
+    return 0;
 }
 
-static int dbgd_mem_read(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_mem_read(int fd)
 {
-    if (!req->has_address || !req->has_size)
-        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+    bool success;
 
-    res->address = req->address;
-    res->has_address = 1;
+    typedef struct {
+      uint32_t address;
+      uint32_t size;
+    } RequestData;
 
-    res->data.len  = req->size;
-    res->data.data = get_transfer_buffer(res->data.len);
-    res->has_data = 1;
+    typedef struct {
+      uint8_t data[1];
+    } ResponseData;
+
+    RequestData request;
+    success = ensure_recv(fd, &request, sizeof(request));
+
+    size_t response_data_length = sizeof(ResponseData) - 1 + request.size;
+    ResponseData* response_data = malloc(response_data_length);
 
     unsigned int i = 0;
-    unsigned int s = req->size;
+    unsigned int s = request.size;
 
     while(s >= 4) {
-      *(uint32_t*)&res->data.data[i] = *(volatile uint32_t*)(req->address + i);
+      *(uint32_t*)&response_data->data[i] = *(volatile uint32_t*)(request.address + i);
       i += 4;
       s -= 4;
     }
     while(s >= 2) {
-      *(uint16_t*)&res->data.data[i] = *(volatile uint16_t*)(req->address + i);
+      *(uint16_t*)&response_data->data[i] = *(volatile uint16_t*)(request.address + i);
       i += 2;
       s -= 2;
     }
     while(s >= 1) {
-      *(uint8_t*)&res->data.data[i] = *(volatile uint8_t*)(req->address + i);
+      *(uint8_t*)&response_data->data[i] = *(volatile uint8_t*)(request.address + i);
       i += 1;
       s -= 1;
     }
 
-    return DBG__RESPONSE__TYPE__OK;
+    debugPrint("Responding %u / %u / %u bytes\n", sizeof(ResponseData), response_data_length, request.size);
+    send(fd, response_data, response_data_length, 0);
+
+    free(response_data);
+
+    return 0;
 }
 
-static int dbgd_mem_write(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_mem_write(int fd)
 {
-    if (!req->has_address || !req->has_data)
-        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+    bool success;
+
+    typedef struct {
+      uint32_t address;
+      uint32_t data_length;
+    } RequestHeader;
+
+    typedef struct {
+      uint8_t data[1];
+    } RequestData;
+
+    RequestHeader request_header;
+    success = ensure_recv(fd, &request_header, sizeof(request_header));
+    assert(success);
+
+    assert(request_header.data_length > 0);
+    size_t request_data_length = sizeof(RequestData) - 1 +
+                                 request_header.data_length;
+    RequestData* request_data = malloc(request_data_length);
+    success = ensure_recv(fd, request_data, request_data_length);
+    assert(success);
 
     unsigned int i = 0;
-    unsigned int s = req->data.len;
+    unsigned int s = request_header.data_length;
 
     while(s >= 4) {
-      *(volatile uint32_t*)(req->address + i) = *(uint32_t*)&req->data.data[i];
+      *(volatile uint32_t*)(request_header.address + i) = *(uint32_t*)&request_data->data[i];
       i += 4;
       s -= 4;
     }
     while(s >= 2) {
-      *(volatile uint16_t*)(req->address + i) = *(uint16_t*)&req->data.data[i];
+      *(volatile uint16_t*)(request_header.address + i) = *(uint16_t*)&request_data->data[i];
       i += 2;
       s -= 2;
     }
     while(s >= 1) {
-      *(volatile uint8_t*)(req->address + i) = *(uint8_t*)&req->data.data[i];
+      *(volatile uint8_t*)(request_header.address + i) = *(uint8_t*)&request_data->data[i];
       i += 1;
       s -= 1;
     }
 
-    return DBG__RESPONSE__TYPE__OK;
+    free(request_data);
+
+    return 0;
 }
 
-static int dbgd_debug_print(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_debug_print(int fd)
 {
-    debugPrint("%s\n", req->msg);
+    bool success;
 
-    return DBG__RESPONSE__TYPE__OK;
+    typedef struct {
+      uint16_t length;
+    } RequestHeader;
+
+    typedef struct {
+      char message[1];
+    } RequestData;
+
+    RequestHeader request_header;
+    success = ensure_recv(fd, &request_header, sizeof(request_header));
+    assert(success);
+
+    assert(request_header.length > 0);
+    size_t request_data_length = sizeof(RequestData) - 1 +
+                                 request_header.length;
+    RequestData* request_data = malloc(request_data_length);
+    success = ensure_recv(fd, request_data, request_data_length);
+    assert(success);
+
+    debugPrint("%.*s", request_header.length, request_data->message);
+
+    free(request_data);
+
+    return 0;
 }
 
-static int dbgd_show_debug_screen(Dbg__Request *req, Dbg__Response *res)
+static int dbgd_call(int fd)
 {
-    pb_show_debug_screen();
+    bool success;
 
-    return DBG__RESPONSE__TYPE__OK;
-}
+    typedef struct {
+      uint32_t address;
+      uint32_t stack_length;
+    } RequestHeader;
 
-static int dbgd_show_front_screen(Dbg__Request *req, Dbg__Response *res)
-{
-    pb_show_front_screen();
+    typedef struct {
+      uint8_t stack[1];
+    } RequestData;
 
-    return DBG__RESPONSE__TYPE__OK;
-}
+    typedef struct {
+      uint8_t stack[8*4];
+    } ResponseData;
 
-static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
-{
-    if (!req->has_address)
-        return DBG__RESPONSE__TYPE__ERROR_INCOMPLETE_REQUEST;
+    RequestHeader request_header;
+    success = ensure_recv(fd, &request_header, sizeof(request_header));
+    assert(success);
+
+    size_t request_data_length = 0;
+    RequestData* request_data = NULL;
+    if (request_header.stack_length > 0) {
+      request_data_length = sizeof(RequestData) - 1 +
+                            request_header.stack_length;
+      request_data = malloc(request_data_length);
+      success = ensure_recv(fd, request_data, request_data_length);
+      assert(success);
+    }
+
+    ResponseData response_data;
 
     // These variables will be used as parameters for inline assembly.
     // We make them static as the stack pointer will be changed.
@@ -313,21 +403,23 @@ static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
     static uint32_t address;
 
     // Allocate a stack for working and space for supplied data
-    size_t stack_size = 0x1000;
-    if (req->has_data) {
-      stack_size += req->data.len;
-    }
+    size_t stack_size = 0x1000 + request_header.stack_length;
     uint8_t* stack_data = malloc(stack_size);
 
     // Push optional stack contents, starting at top of stack
     stack_pointer = (uint32_t)&stack_data[stack_size];
-    if (req->has_data) {
-      stack_pointer -= req->data.len;
-      memcpy((void*)stack_pointer, req->data.data, req->data.len);
+    if (request_header.stack_length > 0) {
+      stack_pointer -= request_header.stack_length;
+      memcpy((void*)stack_pointer, request_data->stack, request_header.stack_length);
+    }
+
+    // We can already free our request data
+    if (request_data != NULL) {
+      free(request_data);
     }
 
     // Set address to call
-    address = req->address;
+    address = request_header.address;
 
     asm("pusha\n"
         "mov %%esp, %[stack_backup]\n"     // Keep copy of original stack
@@ -344,16 +436,13 @@ static int dbgd_call(Dbg__Request *req, Dbg__Response *res)
           [address]       "m" (address)
         : "memory");
 
-    // Get transfer buffer for a set of registers from pusha
-    res->data.len  = 32;
-    res->data.data = get_transfer_buffer(res->data.len);
-    res->has_data = 1;
-
     // Copy pusha data into return buffer
-    stack_pointer -= res->data.len;
-    memcpy(res->data.data, (void*)stack_pointer, res->data.len);
+    stack_pointer -= sizeof(response_data.stack);
+    memcpy(response_data.stack, (void*)stack_pointer, sizeof(response_data.stack));
 
     free(stack_data);
 
-    return DBG__RESPONSE__TYPE__OK;
+    send(fd, &response_data, sizeof(response_data), 0);
+
+    return 0;
 }

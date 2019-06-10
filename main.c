@@ -10,33 +10,26 @@
 #include <xboxrt/debug.h>
 
 #include "net.h"
-#include "gfx.h"
 #include "dbgd.h"
 
 /* Main program function */
 void main(void)
 {
-    gfx_init();
-    pb_print("NXDK Development Dash\n");
+    XVideoSetMode(640, 480, 32, REFRESH_DEFAULT);
 
+    debugPrint("nxdk-rdt\n");
+
+    //FIXME: Set up GPU
+    //FIXME: pb_init
     pb_show_debug_screen();
+
+    // Set up networking
     net_init();
     dbgd_init();
 
-    while (1) NtYieldExecution();
-    /* Not ready for below yet, just stick to debug screen for now */
-
-    pb_show_front_screen();
-
     while(1) {
-        gfx_begin();
-        gfx_draw_bg();
-        pb_draw_text_screen();
-        gfx_end();
-        gfx_present();
         NtYieldExecution();
     }
 
-    pb_show_debug_screen();
     pb_kill();
 }
