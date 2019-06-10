@@ -136,6 +136,7 @@ static void dbgd_thread(void *arg)
     while(true) {
         struct sockaddr client_address;
         socklen_t client_address_len;
+        debugPrint("Waiting for accept\n");
         int client_fd = accept(fd, &client_address, &client_address_len);
 
         if (client_fd == -1) {
