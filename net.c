@@ -20,7 +20,7 @@
 
 #include "net.h"
 
-#define USE_DHCP         1
+#define USE_DHCP         0
 #define PKT_TMR_INTERVAL 5 /* ms */
 #define DEBUGGING        0
 
@@ -47,13 +47,34 @@ int net_init(void)
 #endif
 
 #if USE_DHCP
-    IP4_ADDR(&gw, 0,0,0,0);
     IP4_ADDR(&ipaddr, 0,0,0,0);
     IP4_ADDR(&netmask, 0,0,0,0);
+    IP4_ADDR(&gw, 0,0,0,0);
 #else
-    IP4_ADDR(&gw, 10,0,1,1);
-    IP4_ADDR(&ipaddr, 10,0,1,7);
+    IP4_ADDR(&ipaddr, 192,168,177,3);
     IP4_ADDR(&netmask, 255,255,255,0);
+    IP4_ADDR(&gw, 192,168,177,1);
+
+// Stolen from MSDN and Cxbx. Must be moved to nxdk
+#define REG_DWORD 4
+#define XC_ONLINE_IP_ADDRESS              0xD
+#define XC_ONLINE_SUBNET_ADDRESS          0x10
+#define XC_ONLINE_DEFAULT_GATEWAY_ADDRESS 0xF
+
+    ULONG type;
+    NTSTATUS hr;
+
+    DWORD xbox_ipaddr;
+    hr = ExQueryNonVolatileSetting(XC_ONLINE_IP_ADDRESS, &type, &xbox_ipaddr, sizeof(xbox_ipaddr), NULL);
+    if (hr == STATUS_SUCCESS && type == REG_DWORD) { ip4_addr_set_u32(&ipaddr, xbox_ipaddr); }
+
+    DWORD xbox_netmask;
+    hr = ExQueryNonVolatileSetting(XC_ONLINE_SUBNET_ADDRESS, &type, &xbox_netmask, sizeof(xbox_netmask), NULL);
+    if (hr == STATUS_SUCCESS && type == REG_DWORD) { ip4_addr_set_u32(&netmask, xbox_netmask); }
+
+    DWORD xbox_gw;
+    hr = ExQueryNonVolatileSetting(XC_ONLINE_DEFAULT_GATEWAY_ADDRESS, &type, &xbox_gw, sizeof(xbox_gw), NULL);
+    if (hr == STATUS_SUCCESS && type == REG_DWORD) { ip4_addr_set_u32(&gw, xbox_gw); }
 #endif
 
     /* Initialize the TCP/IP stack. Wait for completion. */
